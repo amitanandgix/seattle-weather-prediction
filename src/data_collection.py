@@ -38,21 +38,32 @@ def _fetch_from_api(url, params):
     return response.json()
 
 
-def _fetch_hourly(url, start_date, end_date):
-    """Fetch hourly data and return as DataFrame indexed by datetime."""
-    params = {
-        "latitude":   config.SEATTLE_LAT,
-        "longitude":  config.SEATTLE_LON,
-        "start_date": start_date,
-        "end_date":   end_date,
-        "hourly":     ",".join(HOURLY_VARIABLES),
-        "timezone":   config.TIMEZONE,
-    }
-    data = _fetch_from_api(url, params)
-    df = pd.DataFrame(data["hourly"])
-    df["time"] = pd.to_datetime(df["time"])
-    df.set_index("time", inplace=True)
-    return df
+def _fetch_hourly(url, start_date, end_date, chunk_years=2):
+    """Fetch hourly data in yearly chunks to avoid API rate limits."""
+    from datetime import date as date_type
+    start = pd.Timestamp(start_date)
+    end   = pd.Timestamp(end_date)
+    chunks = []
+    chunk_start = start
+    while chunk_start <= end:
+        chunk_end = min(chunk_start + pd.DateOffset(years=chunk_years) - pd.Timedelta(days=1), end)
+        params = {
+            "latitude":   config.SEATTLE_LAT,
+            "longitude":  config.SEATTLE_LON,
+            "start_date": chunk_start.strftime("%Y-%m-%d"),
+            "end_date":   chunk_end.strftime("%Y-%m-%d"),
+            "hourly":     ",".join(HOURLY_VARIABLES),
+            "timezone":   config.TIMEZONE,
+        }
+        print(f"  Hourly chunk: {params['start_date']} to {params['end_date']}...")
+        data = _fetch_from_api(url, params)
+        df_chunk = pd.DataFrame(data["hourly"])
+        df_chunk["time"] = pd.to_datetime(df_chunk["time"])
+        df_chunk.set_index("time", inplace=True)
+        chunks.append(df_chunk)
+        chunk_start = chunk_end + pd.Timedelta(days=1)
+        time.sleep(3)
+    return pd.concat(chunks)
 
 
 def _aggregate_hourly_to_daily(df_hourly):
@@ -76,28 +87,48 @@ def _aggregate_hourly_to_daily(df_hourly):
     return result
 
 
+DAILY_CACHE = "data/raw/seattle_daily_cache.csv"
+HOURLY_CACHE = "data/raw/seattle_hourly_cache.csv"
+
 def download_historical():
     """Download historical daily + hourly weather data for Seattle and save to CSV."""
-    print("Downloading historical daily weather data from Open-Meteo...")
-    params = {
-        "latitude":   config.SEATTLE_LAT,
-        "longitude":  config.SEATTLE_LON,
-        "start_date": config.HISTORICAL_START,
-        "end_date":   config.HISTORICAL_END,
-        "daily":      ",".join(DAILY_VARIABLES),
-        "timezone":   config.TIMEZONE,
-    }
-    data = _fetch_from_api(ARCHIVE_URL, params)
-    df_daily = pd.DataFrame(data["daily"])
-    df_daily.rename(columns={"time": "date"}, inplace=True)
-    df_daily["date"] = pd.to_datetime(df_daily["date"])
-    df_daily.set_index("date", inplace=True)
+    os.makedirs("data/raw", exist_ok=True)
 
-    print("Downloading hourly data for sub-day features...")
-    time.sleep(0.5)
-    df_hourly = _fetch_hourly(ARCHIVE_URL, config.HISTORICAL_START, config.HISTORICAL_END)
+    # --- Daily data (cached so we don't re-download if hourly fails) ---
+    if os.path.exists(DAILY_CACHE):
+        print("Loading cached daily data...")
+        df_daily = pd.read_csv(DAILY_CACHE, index_col="date", parse_dates=True)
+    else:
+        print("Downloading historical daily weather data from Open-Meteo...")
+        params = {
+            "latitude":   config.SEATTLE_LAT,
+            "longitude":  config.SEATTLE_LON,
+            "start_date": config.HISTORICAL_START,
+            "end_date":   config.HISTORICAL_END,
+            "daily":      ",".join(DAILY_VARIABLES),
+            "timezone":   config.TIMEZONE,
+        }
+        data = _fetch_from_api(ARCHIVE_URL, params)
+        df_daily = pd.DataFrame(data["daily"])
+        df_daily.rename(columns={"time": "date"}, inplace=True)
+        df_daily["date"] = pd.to_datetime(df_daily["date"])
+        df_daily.set_index("date", inplace=True)
+        df_daily.to_csv(DAILY_CACHE)
+        print(f"Daily data cached to {DAILY_CACHE}")
+
+    # --- Hourly data (cached separately) ---
+    if os.path.exists(HOURLY_CACHE):
+        print("Loading cached hourly data...")
+        df_hourly = pd.read_csv(HOURLY_CACHE, index_col="time", parse_dates=True)
+    else:
+        print("Downloading hourly data for sub-day features (this will take a few minutes)...")
+        print("Waiting 3 minutes to clear API rate limit...")
+        time.sleep(180)
+        df_hourly = _fetch_hourly(ARCHIVE_URL, config.HISTORICAL_START, config.HISTORICAL_END)
+        df_hourly.to_csv(HOURLY_CACHE)
+        print(f"Hourly data cached to {HOURLY_CACHE}")
+
     df_hourly_daily = _aggregate_hourly_to_daily(df_hourly)
-
     df = df_daily.join(df_hourly_daily, how="left")
 
     os.makedirs(os.path.dirname(config.RAW_DATA_PATH), exist_ok=True)

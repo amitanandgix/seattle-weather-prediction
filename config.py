@@ -2,7 +2,7 @@ SEATTLE_LAT = 47.6062
 SEATTLE_LON = -122.3321
 TIMEZONE = "America/Los_Angeles"
 
-HISTORICAL_START = "2006-01-01"
+HISTORICAL_START = "1980-01-01"
 HISTORICAL_END   = "2025-12-31"
 
 RAW_DATA_PATH       = "data/raw/seattle_weather_raw.csv"

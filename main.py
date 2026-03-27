@@ -31,6 +31,11 @@ def main():
 
     # Step 1: Download historical data
     if args.retrain or not os.path.exists(config.RAW_DATA_PATH):
+        from src.data_collection import DAILY_CACHE, HOURLY_CACHE
+        if args.retrain:
+            for cache in [DAILY_CACHE, HOURLY_CACHE]:
+                if os.path.exists(cache):
+                    os.remove(cache)
         download_historical()
     else:
         print(f"Raw data already exists at {config.RAW_DATA_PATH} — skipping download.")

@@ -23,3 +23,7 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
+
+# Presentation files
+*.pptx
+make_presentation.py

@@ -22,7 +22,7 @@ except ImportError:
 def generate_report():
     os.makedirs("reports", exist_ok=True)
 
-    df = pd.read_csv(config.PROCESSED_DATA_PATH, index_col="date", parse_dates=True)
+    df    = pd.read_csv(config.PROCESSED_DATA_PATH, index_col="date", parse_dates=True)
     model = joblib.load(config.MODEL_PATH)
     features = get_feature_columns()
 
@@ -32,22 +32,29 @@ def generate_report():
     y_pred = model.predict(X_test)
     y_prob = model.predict_proba(X_test)[:, 1]
 
+    # Extract XGBoost component for feature importance and SHAP
+    xgb_model = model.named_estimators_["xgb"]
+
     # 1. Confusion Matrix
     cm = confusion_matrix(y_test, y_pred)
     fig, ax = plt.subplots(figsize=(5, 4))
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["No Rain", "Rain"])
     disp.plot(ax=ax, colorbar=False, cmap="Blues")
-    ax.set_title("Confusion Matrix — XGBoost (Test Set)")
+    ax.set_title("Confusion Matrix — Ensemble (Test Set)")
     plt.tight_layout()
     plt.savefig("reports/confusion_matrix.png", dpi=150)
     plt.close()
     print("Saved: reports/confusion_matrix.png")
 
-    # 2. Feature Importance
-    importance = pd.Series(model.feature_importances_, index=features).sort_values(ascending=True).tail(15)
+    # 2. Feature Importance (from XGBoost component)
+    importance = (
+        pd.Series(xgb_model.feature_importances_, index=features)
+        .sort_values(ascending=True)
+        .tail(15)
+    )
     fig, ax = plt.subplots(figsize=(8, 6))
     importance.plot(kind="barh", ax=ax, color="steelblue")
-    ax.set_title("Top 15 Feature Importances — XGBoost")
+    ax.set_title("Top 15 Feature Importances — XGBoost (from Ensemble)")
     ax.set_xlabel("Importance Score")
     plt.tight_layout()
     plt.savefig("reports/feature_importance.png", dpi=150)
@@ -57,7 +64,7 @@ def generate_report():
     # 3. Monthly Accuracy
     results_df = pd.DataFrame({"y_true": y_test, "y_pred": y_pred}, index=X_test.index)
     results_df["correct"] = (results_df["y_true"] == results_df["y_pred"]).astype(int)
-    results_df["month"] = results_df.index.month
+    results_df["month"]   = results_df.index.month
     monthly_acc = results_df.groupby("month")["correct"].mean()
 
     month_names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
@@ -67,7 +74,7 @@ def generate_report():
     ax.set_xticklabels(month_names)
     ax.set_ylim(0, 1)
     ax.set_ylabel("Accuracy")
-    ax.set_title("Monthly Accuracy — XGBoost (Test Set)")
+    ax.set_title("Monthly Accuracy — Ensemble (Test Set)")
     ax.axhline(0.5, color="red", linestyle="--", linewidth=0.8, label="Random baseline")
     ax.legend()
     plt.tight_layout()
@@ -75,10 +82,10 @@ def generate_report():
     plt.close()
     print("Saved: reports/monthly_accuracy.png")
 
-    # 4. SHAP summary (optional)
+    # 4. SHAP summary (uses XGBoost component)
     if SHAP_AVAILABLE:
         print("Generating SHAP summary plot (this may take a moment)...")
-        explainer = shap.TreeExplainer(model)
+        explainer   = shap.TreeExplainer(xgb_model)
         shap_values = explainer.shap_values(X_test)
         plt.figure()
         shap.summary_plot(shap_values, X_test, show=False, max_display=15)

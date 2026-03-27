@@ -11,52 +11,56 @@ from src.feature_engineering import build_features, get_feature_columns
 
 
 def predict_tomorrow():
-    """Fetch today's data, build features, and predict tomorrow's rain."""
+    """Fetch recent + forecast data, build features, and predict the next 4 days."""
     if not os.path.exists(config.MODEL_PATH):
         raise FileNotFoundError(
             f"Model not found at {config.MODEL_PATH}. Run train.py first."
         )
 
-    model = joblib.load(config.MODEL_PATH)
+    model    = joblib.load(config.MODEL_PATH)
     features = get_feature_columns()
 
-    # Fetch recent data to build lag/rolling features
-    df_recent = fetch_recent_for_prediction(days=40)
+    # Fetch historical context + 3 days of forecast so we can predict 4 days out
+    df_recent   = fetch_recent_for_prediction(days=40, forecast_days=3)
     df_features = build_features(df_recent, is_prediction=True)
 
     if df_features.empty:
         raise ValueError("Not enough recent data to build features.")
 
-    # Use the latest row (today)
-    latest = df_features[features].iloc[[-1]]
-    today = df_features.index[-1].date()
-    tomorrow = today + timedelta(days=1)
+    # The last 4 rows cover today through today+3; predicting tomorrow through today+4
+    prediction_rows = df_features[features].iloc[-4:]
 
-    prob = model.predict_proba(latest)[0][1]  # probability of rain
-    prediction = int(prob >= 0.5)
-
-    result = {
-        "prediction_date": str(tomorrow),
-        "rain_tomorrow": bool(prediction),
-        "rain_probability_pct": round(float(prob) * 100, 1),
-        "model": "XGBoost",
-        "based_on_data_up_to": str(today),
-    }
+    results = []
+    for i, (idx, row) in enumerate(prediction_rows.iterrows()):
+        prediction_date = idx.date() + timedelta(days=1)
+        prob            = model.predict_proba(row.to_frame().T)[0][1]
+        prediction      = int(prob >= 0.5)
+        results.append({
+            "prediction_date":      str(prediction_date),
+            "rain_tomorrow":        bool(prediction),
+            "rain_probability_pct": round(float(prob) * 100, 1),
+            "model":                "Ensemble (XGB+HGBT+RF)",
+            "based_on_data_up_to":  str(idx.date()),
+        })
 
     os.makedirs("data/predictions", exist_ok=True)
     with open("data/predictions/latest_prediction.json", "w") as f:
-        json.dump(result, f, indent=2)
+        json.dump(results, f, indent=2)
 
-    print("\n" + "=" * 45)
-    print(f"  Seattle Weather Prediction")
-    print(f"  Date: {tomorrow}")
-    print("=" * 45)
-    print(f"  Rain tomorrow : {'YES' if prediction else 'NO'}")
-    print(f"  Confidence    : {prob*100:.1f}%")
-    print(f"  Model         : XGBoost")
-    print("=" * 45)
+    print("\n" + "=" * 51)
+    print(f"  Seattle Weather Prediction — 4-Day Forecast")
+    print("=" * 51)
+    print(f"  {'Date':<14} {'Rain?':<8} {'Confidence':>10}")
+    print(f"  {'-'*14} {'-'*8} {'-'*10}")
+    for r in results:
+        label = "YES" if r["rain_tomorrow"] else "NO"
+        conf  = f"{r['rain_probability_pct']}%"
+        print(f"  {r['prediction_date']:<14} {label:<8} {conf:>10}")
+    print("=" * 51)
+    print(f"  Model: Ensemble (XGB+HGBT+RF)")
+    print("=" * 51)
 
-    return result
+    return results
 
 
 if __name__ == "__main__":

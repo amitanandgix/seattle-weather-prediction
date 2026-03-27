@@ -44,12 +44,17 @@ def predict_tomorrow():
         temp_max = round(float(df_recent.loc[pred_ts, "temperature_2m_max"]), 1) if pred_ts in df_recent.index.astype(str) else None
         temp_min = round(float(df_recent.loc[pred_ts, "temperature_2m_min"]), 1) if pred_ts in df_recent.index.astype(str) else None
 
+        def to_f(c):
+            return round(c * 9 / 5 + 32, 1) if c is not None else None
+
         results.append({
             "prediction_date":      str(prediction_date),
             "rain_tomorrow":        bool(prediction),
             "rain_probability_pct": round(float(prob) * 100, 1),
             "temp_high_c":          temp_max,
+            "temp_high_f":          to_f(temp_max),
             "temp_low_c":           temp_min,
+            "temp_low_f":           to_f(temp_min),
             "model":                "Ensemble (XGB+HGBT+RF)",
             "based_on_data_up_to":  str(idx.date()),
         })
@@ -58,20 +63,22 @@ def predict_tomorrow():
     with open("data/predictions/latest_prediction.json", "w") as f:
         json.dump(results, f, indent=2)
 
-    print("\n" + "=" * 67)
+    print("\n" + "=" * 75)
     print(f"  Seattle Weather Prediction — 4-Day Forecast")
-    print("=" * 67)
-    print(f"  {'Date':<14} {'Rain?':<8} {'Confidence':>10}  {'High (°C)':>9}  {'Low (°C)':>8}")
-    print(f"  {'-'*14} {'-'*8} {'-'*10}  {'-'*9}  {'-'*8}")
+    print("=" * 75)
+    print(f"  {'Date':<12} {'Rain?':<8} {'Confidence':>10}  {'High':>15}  {'Low':>15}")
+    print(f"  {'-'*12} {'-'*8} {'-'*10}  {'-'*15}  {'-'*15}")
     for r in results:
         label    = "YES" if r["rain_tomorrow"] else "NO"
         conf     = f"{r['rain_probability_pct']}%"
-        high_str = f"{r['temp_high_c']}°C" if r["temp_high_c"] is not None else "N/A"
-        low_str  = f"{r['temp_low_c']}°C"  if r["temp_low_c"]  is not None else "N/A"
-        print(f"  {r['prediction_date']:<14} {label:<8} {conf:>10}  {high_str:>9}  {low_str:>8}")
-    print("=" * 67)
+        date_str = prediction_date.strftime("%b %d, %Y") if False else \
+                   pd.Timestamp(r["prediction_date"]).strftime("%b %d, %Y")
+        high_str = f"{r['temp_high_c']}°C / {r['temp_high_f']}°F" if r["temp_high_c"] is not None else "N/A"
+        low_str  = f"{r['temp_low_c']}°C / {r['temp_low_f']}°F"   if r["temp_low_c"]  is not None else "N/A"
+        print(f"  {date_str:<12} {label:<8} {conf:>10}  {high_str:>15}  {low_str:>15}")
+    print("=" * 75)
     print(f"  Model: Ensemble (XGB+HGBT+RF)")
-    print("=" * 67)
+    print("=" * 75)
 
     return results
 

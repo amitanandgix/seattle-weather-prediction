@@ -45,15 +45,15 @@ def predict_tomorrow():
         temp_min = round(float(df_recent.loc[pred_ts, "temperature_2m_min"]), 1) if pred_ts in df_recent.index.astype(str) else None
 
         def to_f(c):
-            return round(c * 9 / 5 + 32, 1) if c is not None else None
+            return round(c * 9 / 5 + 32) if c is not None else None
 
         results.append({
             "prediction_date":      str(prediction_date),
             "rain_tomorrow":        bool(prediction),
             "rain_probability_pct": round(float(prob) * 100, 1),
-            "temp_high_c":          temp_max,
+            "temp_high_c":          round(temp_max) if temp_max is not None else None,
             "temp_high_f":          to_f(temp_max),
-            "temp_low_c":           temp_min,
+            "temp_low_c":           round(temp_min) if temp_min is not None else None,
             "temp_low_f":           to_f(temp_min),
             "model":                "Ensemble (XGB+HGBT+RF)",
             "based_on_data_up_to":  str(idx.date()),

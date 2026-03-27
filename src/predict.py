@@ -2,6 +2,7 @@ import joblib
 import json
 import os
 import sys
+import pandas as pd
 from datetime import date, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -21,24 +22,34 @@ def predict_tomorrow():
     features = get_feature_columns()
 
     # Fetch historical context + 3 days of forecast so we can predict 4 days out
-    df_recent   = fetch_recent_for_prediction(days=40, forecast_days=3)
+    df_recent   = fetch_recent_for_prediction(days=40, forecast_days=5)
     df_features = build_features(df_recent, is_prediction=True)
 
     if df_features.empty:
         raise ValueError("Not enough recent data to build features.")
 
-    # The last 4 rows cover today through today+3; predicting tomorrow through today+4
-    prediction_rows = df_features[features].iloc[-4:]
+    # Select the 4 rows starting from today; each predicts the next day (today+1 … today+4)
+    today_ts = pd.Timestamp(date.today())
+    base_dates = [today_ts + timedelta(days=i) for i in range(4)]
+    prediction_rows = df_features[features].reindex(base_dates).dropna(how="all")
 
     results = []
     for i, (idx, row) in enumerate(prediction_rows.iterrows()):
         prediction_date = idx.date() + timedelta(days=1)
         prob            = model.predict_proba(row.to_frame().T)[0][1]
         prediction      = int(prob >= 0.5)
+
+        # Look up forecast high/low for the prediction date from raw fetched data
+        pred_ts = str(prediction_date)
+        temp_max = round(float(df_recent.loc[pred_ts, "temperature_2m_max"]), 1) if pred_ts in df_recent.index.astype(str) else None
+        temp_min = round(float(df_recent.loc[pred_ts, "temperature_2m_min"]), 1) if pred_ts in df_recent.index.astype(str) else None
+
         results.append({
             "prediction_date":      str(prediction_date),
             "rain_tomorrow":        bool(prediction),
             "rain_probability_pct": round(float(prob) * 100, 1),
+            "temp_high_c":          temp_max,
+            "temp_low_c":           temp_min,
             "model":                "Ensemble (XGB+HGBT+RF)",
             "based_on_data_up_to":  str(idx.date()),
         })
@@ -47,18 +58,20 @@ def predict_tomorrow():
     with open("data/predictions/latest_prediction.json", "w") as f:
         json.dump(results, f, indent=2)
 
-    print("\n" + "=" * 51)
+    print("\n" + "=" * 67)
     print(f"  Seattle Weather Prediction — 4-Day Forecast")
-    print("=" * 51)
-    print(f"  {'Date':<14} {'Rain?':<8} {'Confidence':>10}")
-    print(f"  {'-'*14} {'-'*8} {'-'*10}")
+    print("=" * 67)
+    print(f"  {'Date':<14} {'Rain?':<8} {'Confidence':>10}  {'High (°C)':>9}  {'Low (°C)':>8}")
+    print(f"  {'-'*14} {'-'*8} {'-'*10}  {'-'*9}  {'-'*8}")
     for r in results:
-        label = "YES" if r["rain_tomorrow"] else "NO"
-        conf  = f"{r['rain_probability_pct']}%"
-        print(f"  {r['prediction_date']:<14} {label:<8} {conf:>10}")
-    print("=" * 51)
+        label    = "YES" if r["rain_tomorrow"] else "NO"
+        conf     = f"{r['rain_probability_pct']}%"
+        high_str = f"{r['temp_high_c']}°C" if r["temp_high_c"] is not None else "N/A"
+        low_str  = f"{r['temp_low_c']}°C"  if r["temp_low_c"]  is not None else "N/A"
+        print(f"  {r['prediction_date']:<14} {label:<8} {conf:>10}  {high_str:>9}  {low_str:>8}")
+    print("=" * 67)
     print(f"  Model: Ensemble (XGB+HGBT+RF)")
-    print("=" * 51)
+    print("=" * 67)
 
     return results
 

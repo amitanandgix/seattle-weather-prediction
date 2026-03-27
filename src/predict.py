@@ -63,22 +63,23 @@ def predict_tomorrow():
     with open("data/predictions/latest_prediction.json", "w") as f:
         json.dump(results, f, indent=2)
 
-    print("\n" + "=" * 75)
-    print(f"  Seattle Weather Prediction — 4-Day Forecast")
-    print("=" * 75)
-    print(f"  {'Date':<12} {'Rain?':<8} {'Confidence':>10}  {'High':>15}  {'Low':>15}")
-    print(f"  {'-'*12} {'-'*8} {'-'*10}  {'-'*15}  {'-'*15}")
+    C0, C1, C2, C3, C4 = 14, 8, 12, 18, 18
+    sep = "+" + "+".join("-" * (w + 2) for w in [C0, C1, C2, C3, C4]) + "+"
+
+    print()
+    print(f"  Seattle Weather Prediction - 4-Day Forecast")
+    print("  " + sep)
+    print(f"  | {'Date':<{C0}} | {'Rain?':<{C1}} | {'Confidence':>{C2}} | {'High':^{C3}} | {'Low':^{C4}} |")
+    print("  " + sep)
     for r in results:
         label    = "YES" if r["rain_tomorrow"] else "NO"
         conf     = f"{r['rain_probability_pct']}%"
-        date_str = prediction_date.strftime("%b %d, %Y") if False else \
-                   pd.Timestamp(r["prediction_date"]).strftime("%b %d, %Y")
-        high_str = f"{r['temp_high_c']}°C / {r['temp_high_f']}°F" if r["temp_high_c"] is not None else "N/A"
-        low_str  = f"{r['temp_low_c']}°C / {r['temp_low_f']}°F"   if r["temp_low_c"]  is not None else "N/A"
-        print(f"  {date_str:<12} {label:<8} {conf:>10}  {high_str:>15}  {low_str:>15}")
-    print("=" * 75)
+        date_str = pd.Timestamp(r["prediction_date"]).strftime("%b %d, %Y")
+        high_str = f"{r['temp_high_c']} C / {r['temp_high_f']} F" if r["temp_high_c"] is not None else "N/A"
+        low_str  = f"{r['temp_low_c']} C / {r['temp_low_f']} F"   if r["temp_low_c"]  is not None else "N/A"
+        print(f"  | {date_str:<{C0}} | {label:<{C1}} | {conf:>{C2}} | {high_str:^{C3}} | {low_str:^{C4}} |")
+    print("  " + sep)
     print(f"  Model: Ensemble (XGB+HGBT+RF)")
-    print("=" * 75)
 
     return results
 
